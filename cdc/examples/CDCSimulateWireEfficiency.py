@@ -39,8 +39,6 @@ from generators import add_evtgen_generator
 parser = argparse.ArgumentParser()
 parser.add_argument('--events', type=int, default=200,
                     help='number of events to generate (default: 200)')
-parser.add_argument('--nproc', type=int, default=4,
-                    help='number of parallel worker processes (default: 4)')
 parser.add_argument('--dqm-output', default='dqm_cdc.root',
                     help='DQM ROOT file written by CDCDQMSim (default: dqm_cdc.root)')
 parser.add_argument('--output', default='wire_eff',
@@ -55,7 +53,6 @@ args, _ = parser.parse_known_args()
 
 b2.set_log_level(b2.LogLevel.WARNING)
 b2.set_random_seed(0)
-b2.set_nprocesses(args.nproc)
 
 main = b2.create_path()
 
