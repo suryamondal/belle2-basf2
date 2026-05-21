@@ -24,7 +24,7 @@ Output:
     wire_eff.pdf / .root     -- 4-panel wire efficiency canvas
 
 Usage:
-    basf2 CDCWireEfficiencyFullChain.py [-- --events 200 --output wire_eff]
+    basf2 CDCSimulateWireEfficiency.py [-- --events 200 --output wire_eff]
 """
 
 import argparse
@@ -57,6 +57,7 @@ b2.set_random_seed(0)
 main = b2.create_path()
 
 main.add_module('EventInfoSetter', expList=[0], runList=[0], evtNumList=[args.events])
+main.add_module('Progress')
 main.add_module('HistoManager', histoFileName=args.dqm_output)
 main.add_module('Gearbox')
 main.add_module('Geometry')
