@@ -1,0 +1,9 @@
+Import('env')
+
+env['LIBS'] = [
+    'cdc',
+    'framework',
+    '$ROOT_LIBS',
+]
+
+Return('env')
