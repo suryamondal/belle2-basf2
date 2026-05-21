@@ -95,7 +95,7 @@ def make_poly(name, title, geo):
     return h
 
 
-class CDCCanvasModule(b2.Module):
+class CDCWireEfficiencyCanvasModule(b2.Module):
     """Produce a 4-panel CDC wire-by-wire tracking efficiency canvas from a DQM ROOT file."""
 
     def initialize(self):
@@ -268,5 +268,5 @@ main = b2.create_path()
 main.add_module('EventInfoSetter', expList=[0], runList=[0], evtNumList=[1])
 main.add_module('Gearbox')
 main.add_module('Geometry', useDB=True)
-main.add_module(CDCCanvasModule())
+main.add_module(CDCWireEfficiencyCanvasModule())
 b2.process(main)
