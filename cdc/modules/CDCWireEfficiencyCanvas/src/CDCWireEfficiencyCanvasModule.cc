@@ -1,4 +1,4 @@
-#include <cdc/modules/CDCCanvas/CDCCanvasModule.h>
+#include <cdc/modules/CDCWireEfficiencyCanvas/CDCWireEfficiencyCanvasModule.h>
 #include <cdc/geometry/CDCGeometryPar.h>
 #include <framework/logging/Logger.h>
 
@@ -16,9 +16,9 @@
 
 using namespace Belle2;
 
-REG_MODULE(CDCCanvas);
+REG_MODULE(CDCWireEfficiencyCanvas);
 
-CDCCanvasModule::CDCCanvasModule() : Module()
+CDCWireEfficiencyCanvasModule::CDCWireEfficiencyCanvasModule() : Module()
 {
   setDescription("Produces a 4-panel CDC wire-efficiency canvas from CDCDQMSim output.");
   addParam("InputFile", m_inputFile, "CDCDQMSim ROOT file containing CDC/hTrackingWireEff",
@@ -33,7 +33,7 @@ CDCCanvasModule::CDCCanvasModule() : Module()
            std::string(""));
 }
 
-void CDCCanvasModule::initialize()
+void CDCWireEfficiencyCanvasModule::initialize()
 {
   TFile* fin = TFile::Open(m_inputFile.c_str(), "READ");
   if (!fin || fin->IsZombie())
@@ -77,8 +77,8 @@ static void drawLabel(TPad* p,
 }
 
 // ── polygon builder ────────────────────────────────────────────────────────────
-TH2Poly* CDCCanvasModule::makePoly(const std::string& name,
-                                   const std::string& title) const
+TH2Poly* CDCWireEfficiencyCanvasModule::makePoly(const std::string& name,
+                                                 const std::string& title) const
 {
   const CDC::CDCGeometryPar& geo = CDC::CDCGeometryPar::Instance();
   const int nSL = geo.getNumberOfSenseLayers();
@@ -136,7 +136,7 @@ TH2Poly* CDCCanvasModule::makePoly(const std::string& name,
 }
 
 // ── main event ────────────────────────────────────────────────────────────────
-void CDCCanvasModule::event()
+void CDCWireEfficiencyCanvasModule::event()
 {
   gROOT->SetBatch(kTRUE);
   gStyle->SetOptStat(0);

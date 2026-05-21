@@ -21,15 +21,15 @@ namespace Belle2 {
    * adjacent bins share their inner boundary exactly, with no triangular gaps.
    *
    * Usage (in 03_canvas.py):
-   *   main.add_module('CDCCanvas',
+   *   main.add_module('CDCWireEfficiencyCanvas',
    *                   InputFile='../output/dqm_merged.root',
    *                   Output='../output/wire_eff')
    */
-  class CDCCanvasModule : public Module {
+  class CDCWireEfficiencyCanvasModule : public Module {
 
   public:
-    CDCCanvasModule();
-    ~CDCCanvasModule() = default;
+    CDCWireEfficiencyCanvasModule();
+    ~CDCWireEfficiencyCanvasModule() = default;
 
     void initialize() override; /**< open input file and read hTrackingWireEff */
     void event() override;      /**< build TH2Poly histograms and write the canvas */
