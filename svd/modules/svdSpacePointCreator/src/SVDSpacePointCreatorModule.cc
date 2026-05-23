@@ -64,15 +64,17 @@ SVDSpacePointCreatorModule::SVDSpacePointCreatorModule() :
            "Use SVD group info to reject combinations from clusters belonging to different groups in 6-sample DAQ mode", bool(false));
   addParam("useSVDGroupInfoIn3Sample", m_useSVDGroupInfoIn3Sample,
            "Use SVD group info to reject combinations from clusters belonging to different groups in 3-sample DAQ mode", bool(false));
-  addParam("numberOfSignalGroups", m_usedParsIn6Samples.numberOfSignalGroups,
-           "Number of groups expected to contain the signal clusters.",
-           int(1));
-  addParam("formSingleSignalGroup", m_usedParsIn6Samples.formSingleSignalGroup,
-           "Form a single super-group.",
-           bool(false));
 
   addParam("forceGroupingFromDB", m_forceGroupingFromDB, "use SVDRecoConfiguration from DB", bool(true));
   addParam("useParamFromDB", m_useParamFromDB, "use SVDTimeGroupingConfiguration from DB", bool(true));
+
+  addParam("groupWiseMode", m_groupWiseMode,
+           "If true, create one SpacePoint StoreArray per time group (named <SpacePoints>_grp0, _grp1, ...). "
+           "Each collection contains only SpacePoints whose constituent clusters share that group ID. "
+           "A cluster near a group boundary may appear in more than one collection.", bool(false));
+  addParam("maxGroups", m_maxGroups,
+           "Number of per-group SpacePoint collections to create in groupwise mode. "
+           "Collections for groups with no clusters are left empty.", int(5));
 
   addParam("useSVDSpacePointSNRFractionFor6Samples", m_useSVDSpacePointSNRFractionFor6Samples,
            "Use SVDSpacePointSNRFractionSelector to apply a selection on combinations of clusters in 6-sample DAQ mode", bool(false));
@@ -84,8 +86,6 @@ SVDSpacePointCreatorModule::SVDSpacePointCreatorModule() :
            bool(true));
 
 
-  m_usedParsIn3Samples.numberOfSignalGroups  = m_usedParsIn6Samples.numberOfSignalGroups;
-  m_usedParsIn3Samples.formSingleSignalGroup = m_usedParsIn6Samples.formSingleSignalGroup;
 }
 
 
@@ -154,17 +154,27 @@ void SVDSpacePointCreatorModule::beginRun()
 
 void SVDSpacePointCreatorModule::initialize()
 {
-  // prepare all store- and relationArrays:
-  m_spacePoints.registerInDataStore(m_spacePointsName, DataStore::c_DontWriteOut | DataStore::c_ErrorIfAlreadyRegistered);
   m_svdClusters.isRequired(m_svdClustersName);
 
-
-  //Relations to cluster objects only if the ancestor relations exist:
-  m_spacePoints.registerRelationTo(m_svdClusters, DataStore::c_Event, DataStore::c_DontWriteOut);
-
-  B2DEBUG(20, "SVDSpacePointCreatorModule(" << m_nameOfInstance << ")::initialize: names set for containers:\n" <<
-          "\nsvdClusters: " << m_svdClusters.getName() <<
-          "\nspacePoints: " << m_spacePoints.getName());
+  if (m_groupWiseMode) {
+    m_spacePointsPerGroup.resize(m_maxGroups);
+    for (int grp = 0; grp < m_maxGroups; grp++) {
+      std::string name = m_spacePointsName + "_grp" + std::to_string(grp);
+      m_spacePointsPerGroup[grp] = StoreArray<SpacePoint>(name);
+      m_spacePointsPerGroup[grp].registerInDataStore(DataStore::c_DontWriteOut | DataStore::c_ErrorIfAlreadyRegistered);
+      m_spacePointsPerGroup[grp].registerRelationTo(m_svdClusters, DataStore::c_Event, DataStore::c_DontWriteOut);
+    }
+    B2DEBUG(20, "SVDSpacePointCreatorModule(" << m_nameOfInstance << ")::initialize: groupwise mode, " <<
+            m_maxGroups << " SpacePoint collections: " << m_spacePointsName << "_grp0 .. _grp" << m_maxGroups - 1);
+  } else {
+    // prepare all store- and relationArrays:
+    m_spacePoints.registerInDataStore(m_spacePointsName, DataStore::c_DontWriteOut | DataStore::c_ErrorIfAlreadyRegistered);
+    //Relations to cluster objects only if the ancestor relations exist:
+    m_spacePoints.registerRelationTo(m_svdClusters, DataStore::c_Event, DataStore::c_DontWriteOut);
+    B2DEBUG(20, "SVDSpacePointCreatorModule(" << m_nameOfInstance << ")::initialize: names set for containers:\n" <<
+            "\nsvdClusters: " << m_svdClusters.getName() <<
+            "\nspacePoints: " << m_spacePoints.getName());
+  }
 
   if (m_useQualityEstimator == true) {
     if (m_inputPDF.empty()) {
@@ -198,9 +208,9 @@ void SVDSpacePointCreatorModule::event()
   bool useSVDGroupInfo = m_useSVDGroupInfoIn6Sample || m_useSVDGroupInfoIn3Sample;
   bool useSVDSpacePointSNRFraction = m_useSVDSpacePointSNRFractionFor6Samples
                                      || m_useSVDSpacePointSNRFractionFor3Samples;
-  int  numberOfSignalGroups;
-  bool formSingleSignalGroup;
-  if (useSVDGroupInfo || useSVDSpacePointSNRFraction) {
+  int  numberOfSignalGroups = 1;
+  bool formSingleSignalGroup = false;
+  if (useSVDGroupInfo || useSVDSpacePointSNRFraction || m_groupWiseMode) {
     // first take Event Information:
     StoreObjPtr<SVDEventInfo> temp_eventinfo(m_svdEventInfoName);
     if (!temp_eventinfo.isValid())
@@ -225,6 +235,13 @@ void SVDSpacePointCreatorModule::event()
   if (m_onlySingleClusterSpacePoints == true) {
     provideSVDClusterSingles(m_svdClusters,
                              m_spacePoints); /// WARNING TODO: missing: possibility to allow storing of u- or v-type clusters only!
+  } else if (m_groupWiseMode) {
+    for (int grp = 0; grp < m_maxGroups; grp++) {
+      provideSVDClusterCombinations(m_svdClusters, m_spacePointsPerGroup[grp], m_HitTimeCut, m_useQualityEstimator,
+                                    m_calibrationFile, m_useLegacyNaming, m_numMaxSpacePoints, m_eventLevelTrackingInfoName,
+                                    true, numberOfSignalGroups, formSingleSignalGroup,
+                                    m_NoiseCal, m_svdSpacePointSNRFractionSelector, useSVDSpacePointSNRFraction, grp);
+    }
   } else {
     provideSVDClusterCombinations(m_svdClusters, m_spacePoints, m_HitTimeCut, m_useQualityEstimator, m_calibrationFile,
                                   m_useLegacyNaming, m_numMaxSpacePoints, m_eventLevelTrackingInfoName, useSVDGroupInfo, numberOfSignalGroups, formSingleSignalGroup,
@@ -232,13 +249,23 @@ void SVDSpacePointCreatorModule::event()
   }
 
 
-  B2DEBUG(21, "SVDSpacePointCreatorModule(" << m_nameOfInstance <<
-          ")::event: spacePoints for single SVDClusters created! Size of arrays:\n" <<
-          ", svdClusters: " << m_svdClusters.getEntries() <<
-          ", spacePoints: " << m_spacePoints.getEntries());
+  if (m_groupWiseMode) {
+    int totalSP = 0;
+    for (int grp = 0; grp < m_maxGroups; grp++) totalSP += m_spacePointsPerGroup[grp].getEntries();
+    B2DEBUG(21, "SVDSpacePointCreatorModule(" << m_nameOfInstance <<
+            ")::event: groupwise mode, svdClusters: " << m_svdClusters.getEntries() <<
+            ", total spacePoints across " << m_maxGroups << " groups: " << totalSP);
+    m_TESTERSpacePointCtr += totalSP;
+  } else {
+    B2DEBUG(21, "SVDSpacePointCreatorModule(" << m_nameOfInstance <<
+            ")::event: spacePoints for single SVDClusters created! Size of arrays:\n" <<
+            ", svdClusters: " << m_svdClusters.getEntries() <<
+            ", spacePoints: " << m_spacePoints.getEntries());
+    m_TESTERSpacePointCtr += m_spacePoints.getEntries();
+  }
 
 
-  if (LogSystem::Instance().isLevelEnabled(LogConfig::c_Debug, 10, PACKAGENAME()) == true) {
+  if (!m_groupWiseMode && LogSystem::Instance().isLevelEnabled(LogConfig::c_Debug, 10, PACKAGENAME()) == true) {
     for (int index = 0; index < m_spacePoints.getEntries(); index++) {
       const SpacePoint* sp = m_spacePoints[index];
 
@@ -250,7 +277,6 @@ void SVDSpacePointCreatorModule::event()
   }
 
   m_TESTERSVDClusterCtr += m_svdClusters.getEntries();
-  m_TESTERSpacePointCtr += m_spacePoints.getEntries();
 
 }
 
