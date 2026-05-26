@@ -125,7 +125,7 @@ namespace Belle2 {
                                        std::vector< std::vector<const SVDCluster*> >& foundCombinations, const SVDHitTimeSelection& hitTimeCut,
                                        const bool& useSVDGroupInfo,  const int& numberOfSignalGroups, const bool& formSingleSignalGroup,
                                        const SVDNoiseCalibrations& noiseCal, const DBObjPtr<SVDSpacePointSNRFractionSelector>& svdSpacePointSelectionFunction,
-                                       bool useSVDSpacePointSNRFractionSelector)
+                                       bool useSVDSpacePointSNRFractionSelector, int targetGroupId = -1)
   {
 
     for (const SVDCluster* uCluster : aSensor.clustersU) {
@@ -151,13 +151,28 @@ namespace Belle2 {
 
           if (int(uTimeGroupId.size()) && int(vTimeGroupId.size())) { // indirect check if the clusterizer module is disabled
             bool isContinue = true;
-            for (auto& uitem : uTimeGroupId) {
-              if (uitem < 0 || uitem >= numberOfSignalGroups) continue;
-              for (auto& vitem : vTimeGroupId) {
-                if (vitem < 0 || vitem >= numberOfSignalGroups) continue;
-                if ((uitem == vitem) || formSingleSignalGroup) { isContinue = false; break; }
+            if (targetGroupId >= 0) {
+              // Groupwise mode: accept pairs where targetGroupId appears in both clusters'
+              // group-ID vectors. A cluster near a group boundary can carry multiple IDs
+              // and will legitimately appear in more than one group's SpacePoint collection.
+              for (auto& uitem : uTimeGroupId) {
+                if (uitem != targetGroupId) continue;
+                for (auto& vitem : vTimeGroupId) {
+                  if (vitem != targetGroupId) continue;
+                  isContinue = false; break;
+                }
+                if (!isContinue) break;
               }
-              if (!isContinue) break;
+            } else {
+              // Standard mode: accept pairs sharing any group in [0, numberOfSignalGroups)
+              for (auto& uitem : uTimeGroupId) {
+                if (uitem < 0 || uitem >= numberOfSignalGroups) continue;
+                for (auto& vitem : vTimeGroupId) {
+                  if (vitem < 0 || vitem >= numberOfSignalGroups) continue;
+                  if ((uitem == vitem) || formSingleSignalGroup) { isContinue = false; break; }
+                }
+                if (!isContinue) break;
+              }
             }
 
             if (isContinue) {
@@ -317,7 +332,7 @@ namespace Belle2 {
       bool useLegacyNaming, unsigned int numMaxSpacePoints, std::string m_eventLevelTrackingInfoName, const bool& useSVDGroupInfo,
       const int& numberOfSignalGroups, const bool& formSingleSignalGroup,
       const SVDNoiseCalibrations& noiseCal, const DBObjPtr<SVDSpacePointSNRFractionSelector>& svdSpacePointSelectionFunction,
-      bool useSVDSpacePointSNRFractionSelector)
+      bool useSVDSpacePointSNRFractionSelector, int targetGroupId = -1)
   {
     std::unordered_map<VxdID::baseType, ClustersOnSensor>
     activatedSensors; // collects one entry per sensor, each entry will contain all Clusters on it TODO: better to use a sorted vector/list?
@@ -335,7 +350,7 @@ namespace Belle2 {
     for (auto& aSensor : activatedSensors)
       findPossibleCombinations(aSensor.second, foundCombinations, hitTimeCut, useSVDGroupInfo, numberOfSignalGroups,
                                formSingleSignalGroup,
-                               noiseCal, svdSpacePointSelectionFunction, useSVDSpacePointSNRFractionSelector);
+                               noiseCal, svdSpacePointSelectionFunction, useSVDSpacePointSNRFractionSelector, targetGroupId);
 
     // Do not make space-points if their number would be too large to be considered by tracking
     if (foundCombinations.size() > numMaxSpacePoints) {
