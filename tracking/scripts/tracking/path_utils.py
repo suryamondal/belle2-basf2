@@ -498,41 +498,95 @@ def add_svd_track_finding(
             add_cosmics_svd_ckf(path, cdc_reco_tracks=input_reco_tracks, svd_reco_tracks=temporary_reco_tracks,
                                 use_mc_truth=use_mc_truth, direction="forward", **kwargs)
 
-    else:
-        raise ValueError(f"Do not understand the svd_ckf_mode {svd_ckf_mode}")
+    elif svd_ckf_mode == "SVD_first":
+        # Inverted chain: SVD is the primary seed detector.
+        #
+        # 1. Fit the SVD standalone tracks so ToCDCCKF has a valid state at the
+        #    SVD outer boundary for outward extrapolation.
+        path.add_module("DAFRecoFitter",
+                        recoTracksStoreArrayName=temporary_reco_tracks).set_name("DAFRecoFitter_SVDForCKF")
 
-    if use_svd_to_cdc_ckf:
-        combined_svd_cdc_standalone_tracks = temporary_svd_cdc_reco_tracks
-    else:
-        combined_svd_cdc_standalone_tracks = output_reco_tracks
-
-    # Write out the combinations of tracks
-    path.add_module("RelatedTracksCombiner", VXDRecoTracksStoreArrayName=temporary_reco_tracks,
-                    CDCRecoTracksStoreArrayName=input_reco_tracks,
-                    recoTracksStoreArrayName=combined_svd_cdc_standalone_tracks)
-
-    if use_svd_to_cdc_ckf:
+        # 2. Primary CKF pass: SVD seeds → extend outward into CDC.
+        #    Output: SVDSeedCDCRecoTracks (SVD tracks augmented with CDC hits).
         path.add_module("ToCDCCKF",
                         inputWireHits="CDCWireHitVector",
-                        inputRecoTrackStoreArrayName=combined_svd_cdc_standalone_tracks,
-                        relatedRecoTrackStoreArrayName="CKFCDCRecoTracks",
+                        inputRecoTrackStoreArrayName=temporary_reco_tracks,
+                        relatedRecoTrackStoreArrayName="SVDSeedCDCRecoTracks",
                         relationCheckForDirection="backward",
-                        ignoreTracksWithCDChits=True,
-                        outputRecoTrackStoreArrayName="CKFCDCRecoTracks",
-                        outputRelationRecoTrackStoreArrayName=combined_svd_cdc_standalone_tracks,
+                        ignoreTracksWithCDChits=False,
+                        outputRecoTrackStoreArrayName="SVDSeedCDCRecoTracks",
+                        outputRelationRecoTrackStoreArrayName=temporary_reco_tracks,
                         writeOutDirection="backward",
                         stateBasicFilterParameters={"maximalHitDistance": 0.15},
                         pathFilter="arc_length",
-                        maximalLayerJump=4)
+                        maximalLayerJump=4).set_name("ToCDCCKF_SVDFirst")
 
+        # 3. Secondary CKF pass: CDC-only seeds → extend inward into SVD.
+        #    Recovers SVD hits for tracks that the Legendre found but VXDTF2 missed.
+        path.add_module("DAFRecoFitter",
+                        recoTracksStoreArrayName=input_reco_tracks).set_name("DAFRecoFitter_CDCForCKF")
+        add_svd_ckf(path, cdc_reco_tracks=input_reco_tracks,
+                    svd_reco_tracks=temporary_reco_tracks,
+                    use_mc_truth=use_mc_truth, direction="backward")
+        if add_both_directions:
+            add_svd_ckf(path, cdc_reco_tracks=input_reco_tracks,
+                        svd_reco_tracks=temporary_reco_tracks,
+                        use_mc_truth=use_mc_truth, direction="forward")
+
+        # 4. Combine SVD and CDC standalone tracks using the CKF relations from step 3.
+        path.add_module("RelatedTracksCombiner",
+                        VXDRecoTracksStoreArrayName=temporary_reco_tracks,
+                        CDCRecoTracksStoreArrayName=input_reco_tracks,
+                        recoTracksStoreArrayName=temporary_svd_cdc_reco_tracks)
+
+        # 5. Merge the SVD-seeded CKF tracks (step 2) with the combined standalone
+        #    tracks (step 4).  CDCCKFTracksCombiner prefers the CKF-extended version
+        #    for tracks that appear in both collections.
         path.add_module("CDCCKFTracksCombiner",
-                        CDCRecoTracksStoreArrayName="CKFCDCRecoTracks",
-                        VXDRecoTracksStoreArrayName=combined_svd_cdc_standalone_tracks,
+                        CDCRecoTracksStoreArrayName="SVDSeedCDCRecoTracks",
+                        VXDRecoTracksStoreArrayName=temporary_svd_cdc_reco_tracks,
                         recoTracksStoreArrayName=output_reco_tracks)
 
         if prune_temporary_tracks:
-            for temp_reco_track in [combined_svd_cdc_standalone_tracks, "CKFCDCRecoTracks"]:
-                path.add_module('PruneRecoTracks', storeArrayName=temp_reco_track)
+            path.add_module('PruneRecoTracks', storeArrayName="SVDSeedCDCRecoTracks")
+            path.add_module('PruneRecoTracks', storeArrayName=temporary_svd_cdc_reco_tracks)
+
+    else:
+        raise ValueError(f"Do not understand the svd_ckf_mode {svd_ckf_mode}")
+
+    if svd_ckf_mode != "SVD_first":
+        if use_svd_to_cdc_ckf:
+            combined_svd_cdc_standalone_tracks = temporary_svd_cdc_reco_tracks
+        else:
+            combined_svd_cdc_standalone_tracks = output_reco_tracks
+
+        # Write out the combinations of tracks
+        path.add_module("RelatedTracksCombiner", VXDRecoTracksStoreArrayName=temporary_reco_tracks,
+                        CDCRecoTracksStoreArrayName=input_reco_tracks,
+                        recoTracksStoreArrayName=combined_svd_cdc_standalone_tracks)
+
+        if use_svd_to_cdc_ckf:
+            path.add_module("ToCDCCKF",
+                            inputWireHits="CDCWireHitVector",
+                            inputRecoTrackStoreArrayName=combined_svd_cdc_standalone_tracks,
+                            relatedRecoTrackStoreArrayName="CKFCDCRecoTracks",
+                            relationCheckForDirection="backward",
+                            ignoreTracksWithCDChits=True,
+                            outputRecoTrackStoreArrayName="CKFCDCRecoTracks",
+                            outputRelationRecoTrackStoreArrayName=combined_svd_cdc_standalone_tracks,
+                            writeOutDirection="backward",
+                            stateBasicFilterParameters={"maximalHitDistance": 0.15},
+                            pathFilter="arc_length",
+                            maximalLayerJump=4)
+
+            path.add_module("CDCCKFTracksCombiner",
+                            CDCRecoTracksStoreArrayName="CKFCDCRecoTracks",
+                            VXDRecoTracksStoreArrayName=combined_svd_cdc_standalone_tracks,
+                            recoTracksStoreArrayName=output_reco_tracks)
+
+            if prune_temporary_tracks:
+                for temp_reco_track in [combined_svd_cdc_standalone_tracks, "CKFCDCRecoTracks"]:
+                    path.add_module('PruneRecoTracks', storeArrayName=temp_reco_track)
 
 
 def add_svd_standalone_tracking(path,
