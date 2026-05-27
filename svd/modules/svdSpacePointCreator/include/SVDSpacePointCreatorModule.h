@@ -13,6 +13,9 @@
 #include <framework/datastore/StoreArray.h>
 #include <framework/database/DBObjPtr.h>
 
+// tracking
+#include <tracking/dataobjects/RecoTrack.h>
+
 // svd
 #include <svd/dbobjects/SVDRecoConfiguration.h>
 #include <svd/dbobjects/SVDSpacePointSNRFractionSelector.h>
@@ -88,6 +91,9 @@ namespace Belle2 {
     bool m_groupWiseMode = false; /**< If true, create one SpacePoint StoreArray per time group */
     int m_maxGroups = 5; /**< Number of per-group SpacePoint collections to create in groupwise mode */
     std::vector<StoreArray<SpacePoint>> m_spacePointsPerGroup; /**< Per-group SpacePoint collections (groupwise mode) */
+
+    std::string m_recoTracksName = ""; /**< Name of RecoTrack array whose clusters are excluded (empty = no exclusion) */
+    StoreArray<RecoTrack> m_recoTracks; /**< RecoTracks whose SVD clusters are excluded from space point creation */
 
     std::string m_eventLevelTrackingInfoName = ""; /**< Name of the EventLevelTrackingInfo */
 

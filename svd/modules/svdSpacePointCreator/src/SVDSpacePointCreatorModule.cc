@@ -15,6 +15,8 @@
 
 #include <svd/dataobjects/SVDEventInfo.h>
 
+#include <unordered_set>
+
 using namespace std;
 using namespace Belle2;
 
@@ -67,6 +69,11 @@ SVDSpacePointCreatorModule::SVDSpacePointCreatorModule() :
 
   addParam("forceGroupingFromDB", m_forceGroupingFromDB, "use SVDRecoConfiguration from DB", bool(true));
   addParam("useParamFromDB", m_useParamFromDB, "use SVDTimeGroupingConfiguration from DB", bool(true));
+
+  addParam("SVDRecoTracksToSkip", m_recoTracksName,
+           "Name of a RecoTrack StoreArray whose SVD clusters are excluded from space point creation. "
+           "Use this for the CKF flat collection to avoid re-using clusters already assigned by VXDTF2. "
+           "Empty string (default) disables the filter.", string(""));
 
   addParam("groupWiseMode", m_groupWiseMode,
            "If true, create one SpacePoint StoreArray per time group (named <SpacePoints>_grp0, _grp1, ...). "
@@ -156,6 +163,10 @@ void SVDSpacePointCreatorModule::initialize()
 {
   m_svdClusters.isRequired(m_svdClustersName);
 
+  if (!m_recoTracksName.empty()) {
+    m_recoTracks.isRequired(m_recoTracksName);
+  }
+
   if (m_groupWiseMode) {
     m_spacePointsPerGroup.resize(m_maxGroups);
     for (int grp = 0; grp < m_maxGroups; grp++) {
@@ -232,6 +243,16 @@ void SVDSpacePointCreatorModule::event()
     }
   }
 
+  // collect clusters already assigned to existing RecoTracks (only for the flat CKF collection)
+  std::unordered_set<const SVDCluster*> usedClusters;
+  if (!m_recoTracksName.empty()) {
+    for (const RecoTrack& rt : m_recoTracks) {
+      for (const SVDCluster* cl : rt.getSVDHitList()) {
+        usedClusters.insert(cl);
+      }
+    }
+  }
+
   if (m_onlySingleClusterSpacePoints == true) {
     provideSVDClusterSingles(m_svdClusters,
                              m_spacePoints); /// WARNING TODO: missing: possibility to allow storing of u- or v-type clusters only!
@@ -245,7 +266,7 @@ void SVDSpacePointCreatorModule::event()
   } else {
     provideSVDClusterCombinations(m_svdClusters, m_spacePoints, m_HitTimeCut, m_useQualityEstimator, m_calibrationFile,
                                   m_useLegacyNaming, m_numMaxSpacePoints, m_eventLevelTrackingInfoName, useSVDGroupInfo, numberOfSignalGroups, formSingleSignalGroup,
-                                  m_NoiseCal, m_svdSpacePointSNRFractionSelector, useSVDSpacePointSNRFraction);
+                                  m_NoiseCal, m_svdSpacePointSNRFractionSelector, useSVDSpacePointSNRFraction, -1, usedClusters);
   }
 
 

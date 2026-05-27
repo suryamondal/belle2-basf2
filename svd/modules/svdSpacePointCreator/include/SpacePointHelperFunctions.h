@@ -24,6 +24,7 @@
 #include <vxd/dataobjects/VxdID.h>
 
 #include <unordered_map>
+#include <unordered_set>
 
 #include <TH2.h>
 #include <math.h>
@@ -332,17 +333,18 @@ namespace Belle2 {
       bool useLegacyNaming, unsigned int numMaxSpacePoints, std::string m_eventLevelTrackingInfoName, const bool& useSVDGroupInfo,
       const int& numberOfSignalGroups, const bool& formSingleSignalGroup,
       const SVDNoiseCalibrations& noiseCal, const DBObjPtr<SVDSpacePointSNRFractionSelector>& svdSpacePointSelectionFunction,
-      bool useSVDSpacePointSNRFractionSelector, int targetGroupId = -1)
+      bool useSVDSpacePointSNRFractionSelector, int targetGroupId = -1,
+      const std::unordered_set<const SVDCluster*>& usedClusters = {})
   {
     std::unordered_map<VxdID::baseType, ClustersOnSensor>
     activatedSensors; // collects one entry per sensor, each entry will contain all Clusters on it TODO: better to use a sorted vector/list?
     std::vector<std::vector<const SVDCluster*> >
     foundCombinations; // collects all combinations of Clusters which were possible (condition: 1u+1v-Cluster on the same sensor)
 
-    // sort Clusters by sensor. After the loop, each entry of activatedSensors contains all U and V-type clusters on that sensor
+    // sort Clusters by sensor, skipping clusters already assigned to existing RecoTracks
     for (unsigned int i = 0; i < uint(svdClusters.getEntries()); ++i) {
       SVDCluster* currentCluster = svdClusters[i];
-
+      if (usedClusters.count(currentCluster)) continue;
       activatedSensors[currentCluster->getSensorID().getID()].addCluster(currentCluster);
     }
 
