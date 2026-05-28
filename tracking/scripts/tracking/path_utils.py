@@ -500,13 +500,20 @@ def add_svd_track_finding(
 
     elif svd_ckf_mode == "SVD_first":
         # Inverted chain: SVD is the primary seed detector.
+        # CDC runs only on hits not already claimed by the SVD-seeded CKF.
         #
-        # 1. Fit the SVD standalone tracks so ToCDCCKF has a valid state at the
+        # 1. Wire hit preparation only — creates CDCWireHitVector for ToCDCCKF.
+        #    The rest of CDC tracking (Legendre etc.) runs AFTER ToCDCCKF so
+        #    that it only sees untaken hits.
+        _add_cdc_wire_hit_preparation(path)
+
+        # 2. Fit the SVD standalone tracks so ToCDCCKF has a valid state at the
         #    SVD outer boundary for outward extrapolation.
         path.add_module("DAFRecoFitter",
                         recoTracksStoreArrayName=temporary_reco_tracks).set_name("DAFRecoFitter_SVDForCKF")
 
-        # 2. Primary CKF pass: SVD seeds → extend outward into CDC.
+        # 3. Primary CKF pass: SVD seeds → extend outward into CDC.
+        #    Marks the used CDC wire hits as taken.
         #    Output: SVDSeedCDCRecoTracks (SVD tracks augmented with CDC hits).
         path.add_module("ToCDCCKF",
                         inputWireHits="CDCWireHitVector",
@@ -521,8 +528,14 @@ def add_svd_track_finding(
                         pathFilter="arc_length",
                         maximalLayerJump=4).set_name("ToCDCCKF_SVDFirst")
 
-        # 3. Secondary CKF pass: CDC-only seeds → extend inward into SVD.
+        # 4. CDC track finding on remaining (untaken) CDC hits.
+        #    Wire hit preparation already done in step 1; skip it here.
+        add_cdc_track_finding(path, output_reco_tracks=input_reco_tracks,
+                              skip_wire_hit_preparation=True)
+
+        # 5. Secondary CKF pass: CDC-only seeds → extend inward into SVD.
         #    Recovers SVD hits for tracks that the Legendre found but VXDTF2 missed.
+        #    (SVDSpacePoints are pre-filtered to exclude clusters used by VXDTF2.)
         path.add_module("DAFRecoFitter",
                         recoTracksStoreArrayName=input_reco_tracks).set_name("DAFRecoFitter_CDCForCKF")
         add_svd_ckf(path, cdc_reco_tracks=input_reco_tracks,
@@ -533,14 +546,14 @@ def add_svd_track_finding(
                         svd_reco_tracks=temporary_reco_tracks,
                         use_mc_truth=use_mc_truth, direction="forward")
 
-        # 4. Combine SVD and CDC standalone tracks using the CKF relations from step 3.
+        # 6. Combine SVD and CDC standalone tracks using the CKF relations from step 5.
         path.add_module("RelatedTracksCombiner",
                         VXDRecoTracksStoreArrayName=temporary_reco_tracks,
                         CDCRecoTracksStoreArrayName=input_reco_tracks,
                         recoTracksStoreArrayName=temporary_svd_cdc_reco_tracks)
 
-        # 5. Merge the SVD-seeded CKF tracks (step 2) with the combined standalone
-        #    tracks (step 4).  CDCCKFTracksCombiner prefers the CKF-extended version
+        # 7. Merge the SVD-seeded CKF tracks (step 3) with the combined standalone
+        #    tracks (step 6).  CDCCKFTracksCombiner prefers the CKF-extended version
         #    for tracks that appear in both collections.
         path.add_module("CDCCKFTracksCombiner",
                         CDCRecoTracksStoreArrayName="SVDSeedCDCRecoTracks",
@@ -666,9 +679,24 @@ def add_svd_standalone_tracking(path,
         raise ValueError(f"Do not understand the svd_standalone_mode {svd_standalone_mode}")
 
 
+def _add_cdc_wire_hit_preparation(path, use_second_hits=False):
+    """Add only the CDC wire hit preparation step (TFCDC_WireHitPreparer).
+
+    Produces CDCWireHitVector.  Called separately when a CKF must run before
+    the rest of CDC tracking (e.g. SVD_first mode: ToCDCCKF marks hits as
+    taken so the subsequent Legendre pass only sees leftover hits).
+    """
+    path.add_module("TFCDC_WireHitPreparer",
+                    wirePosition="aligned",
+                    useSecondHits=use_second_hits,
+                    flightTimeEstimation="outwards",
+                    filter="combined",
+                    filterParameters={'DBPayloadName': 'trackfindingcdc_WireHitBackgroundDetectorParameters'})
+
+
 def add_cdc_track_finding(path, output_reco_tracks="RecoTracks", with_ca=False,
                           use_second_hits=False, add_mva_quality_indicator=True,
-                          reattach_hits=False):
+                          reattach_hits=False, skip_wire_hit_preparation=False):
     """
     Convenience function for adding all cdc track finder modules
     to the path.
@@ -684,18 +712,16 @@ def add_cdc_track_finding(path, output_reco_tracks="RecoTracks", with_ca=False,
     :param cdc_quality_estimator_weightfile: Weightfile identifier for the TFCDC_TrackQualityEstimator
     :param reattach_hits: if true, use the ReattachCDCWireHitsToRecoTracks module at the end of the CDC track finding
                           to readd hits with bad ADC or TOT rejected by the TFCDC_WireHitPreparer module.
+    :param skip_wire_hit_preparation: if true, skip TFCDC_WireHitPreparer (CDCWireHitVector already exists).
+           Use this when wire hit preparation was done separately before a CKF pass (SVD_first mode).
     """
     # add EventLevelTrackinginfo for logging errors
     if 'RegisterEventLevelTrackingInfo' not in path:
         path.add_module('RegisterEventLevelTrackingInfo')
 
     # Init the geometry for cdc tracking and the hits and cut low ADC hits
-    path.add_module("TFCDC_WireHitPreparer",
-                    wirePosition="aligned",
-                    useSecondHits=use_second_hits,
-                    flightTimeEstimation="outwards",
-                    filter="combined",
-                    filterParameters={'DBPayloadName': 'trackfindingcdc_WireHitBackgroundDetectorParameters'})
+    if not skip_wire_hit_preparation:
+        _add_cdc_wire_hit_preparation(path, use_second_hits)
 
     # Constructs clusters
     path.add_module("TFCDC_ClusterPreparer",
