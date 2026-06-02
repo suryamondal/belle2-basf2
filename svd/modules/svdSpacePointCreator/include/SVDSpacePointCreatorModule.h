@@ -85,6 +85,10 @@ namespace Belle2 {
     StoreArray<SpacePoint>
     m_spacePoints; /**< the storeArray for spacePoints as member, is faster than recreating link for each event */
 
+    bool m_groupWiseMode = false; /**< If true, create one SpacePoint StoreArray per time group */
+    int m_maxGroups = 5; /**< Number of per-group SpacePoint collections to create in groupwise mode */
+    std::vector<StoreArray<SpacePoint>> m_spacePointsPerGroup; /**< Per-group SpacePoint collections (groupwise mode) */
+
     std::string m_eventLevelTrackingInfoName = ""; /**< Name of the EventLevelTrackingInfo */
 
     std::string m_svdEventInfoName; /**< Name of the collection to use for the SVDEventInfo */

@@ -210,10 +210,6 @@ void SVDTimeGroupingModule::event()
   searchGausPeaksInHistogram(h_clsTime, groupInfoVector);
   // resize to max
   resizeToMaxSize(groupInfoVector);
-  // sorting background groups
-  sortBackgroundGroups(groupInfoVector);
-  // sorting signal groups
-  sortSignalGroups(groupInfoVector);
 
   // assign the groupID to clusters
   assignGroupIdsToClusters(h_clsTime, groupInfoVector);
